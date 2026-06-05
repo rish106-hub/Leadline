@@ -1,0 +1,247 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  width: 340px;
+  background: #fff;
+  color: #111;
+}
+
+/* Header */
+.header {
+  background: #25d366;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header h1 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  flex: 1;
+}
+
+.header .sheet-badge {
+  font-size: 11px;
+  color: rgba(255,255,255,0.85);
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Views */
+.view { display: none; padding: 16px; }
+.view.active { display: block; }
+
+/* Setup view */
+.setup-info {
+  font-size: 12px;
+  color: #555;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.field-group {
+  margin-bottom: 12px;
+}
+
+.field-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.field-group input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.field-group input:focus {
+  border-color: #25d366;
+}
+
+.field-group .hint {
+  font-size: 11px;
+  color: #888;
+  margin-top: 3px;
+}
+
+/* Lead view */
+.lead-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.lead-header .contact-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sheet-target {
+  font-size: 11px;
+  color: #888;
+  text-align: right;
+}
+
+.field-row {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 9px;
+}
+
+.field-row label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 3px;
+}
+
+.field-row .value {
+  font-size: 13px;
+  color: #111;
+  padding: 6px 10px;
+  background: #f6f6f6;
+  border-radius: 5px;
+  min-height: 30px;
+  word-break: break-all;
+}
+
+.field-row .value.empty {
+  color: #aaa;
+  font-style: italic;
+}
+
+.field-row input {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 13px;
+  outline: none;
+}
+
+.field-row input:focus {
+  border-color: #25d366;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 10px 0;
+}
+
+/* Buttons */
+.btn {
+  width: 100%;
+  padding: 9px;
+  border: none;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.btn-primary {
+  background: #25d366;
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #1eb356;
+}
+
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #f0f0f0;
+  color: #333;
+  margin-top: 6px;
+}
+
+.btn-secondary:hover {
+  background: #e4e4e4;
+}
+
+/* Error message */
+.error-msg {
+  background: #fff0f0;
+  border: 1px solid #ffcccc;
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: #c0392b;
+  font-size: 12px;
+  text-align: center;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  white-space: nowrap;
+  z-index: 999;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.toast.success {
+  background: #25d366;
+  color: #fff;
+}
+
+.toast.error {
+  background: #e74c3c;
+  color: #fff;
+}
+
+/* Loading spinner */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

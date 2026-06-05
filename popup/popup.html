@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WhatsApp Lead Capture</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+<div class="header">
+  <h1>Lead Capture</h1>
+  <span class="sheet-badge" id="sheetBadge"></span>
+</div>
+
+<!-- Setup View (first run) -->
+<div id="viewSetup" class="view">
+  <p class="setup-info">
+    Connect your Google Sheet to start capturing leads.
+  </p>
+
+  <div class="field-group">
+    <label>Google Sheet Link or ID</label>
+    <input type="text" id="inputSheetId" placeholder="https://docs.google.com/spreadsheets/d/...">
+    <div class="hint">Paste full link or Sheet ID (extracted automatically)</div>
+  </div>
+
+  <div class="field-group">
+    <label>Worksheet Name</label>
+    <input type="text" id="inputSheetName" value="Sheet1" placeholder="Sheet1">
+    <div class="hint">The tab name at the bottom of your sheet</div>
+  </div>
+
+  <button class="btn btn-primary" id="btnSaveConfig">Connect Sheet</button>
+</div>
+
+<!-- No chat open -->
+<div id="viewNoChat" class="view">
+  <div class="error-msg">
+    Open a WhatsApp conversation first, then click the extension icon.
+  </div>
+  <button class="btn btn-secondary" id="btnSettingsFromNoChat">Change Sheet Settings</button>
+</div>
+
+<!-- Lead capture view -->
+<div id="viewLead" class="view">
+  <div class="lead-header">
+    <div class="sheet-target" id="sheetTarget"></div>
+  </div>
+
+  <div class="field-row">
+    <label>Name <span style="font-weight:400;text-transform:none;color:#aaa">(required)</span></label>
+    <input type="text" id="inputName" placeholder="Enter contact name">
+  </div>
+
+  <div class="field-row">
+    <label>Phone</label>
+    <div class="value" id="displayPhone"></div>
+  </div>
+
+  <div class="field-row">
+    <label>Email <span style="font-weight:400;text-transform:none;color:#aaa">(optional)</span></label>
+    <input type="email" id="inputEmail" placeholder="email@example.com">
+  </div>
+
+  <div class="field-row">
+    <label>Company <span style="font-weight:400;text-transform:none;color:#aaa">(optional)</span></label>
+    <input type="text" id="inputCompany" placeholder="Company name">
+  </div>
+
+  <div class="field-row">
+    <label>Message</label>
+    <div class="value" id="displayMessage"></div>
+  </div>
+
+  <div class="field-row">
+    <label>Message Time</label>
+    <div class="value" id="displayMessageTime"></div>
+  </div>
+
+  <div class="field-row">
+    <label>Message Date</label>
+    <div class="value" id="displayMessageDate"></div>
+  </div>
+
+  <hr class="divider">
+
+  <button class="btn btn-primary" id="btnSave" disabled>Save to Sheet</button>
+  <button class="btn btn-secondary" id="btnSettings">Change Sheet Settings</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="popup.js"></script>
+</body>
+</html>
