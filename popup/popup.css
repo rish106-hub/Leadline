@@ -19,6 +19,8 @@
   padding: 0;
 }
 
+.hidden { display: none !important; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 14px;
@@ -215,6 +217,116 @@ input:focus, textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.1);
 }
+
+/* Column Mapping Preview */
+.mapping-preview {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mapping-preview.hidden {
+  display: none;
+}
+
+.mapping-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-offset);
+  border-bottom: 1px solid var(--border);
+}
+
+.mapping-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-light);
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px;
+  color: var(--text-light);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.btn-icon:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.mapping-list {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: 1fr 20px 1fr;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.mapping-row:last-child {
+  border-bottom: none;
+}
+
+.mapping-row.mapped {
+  background: #fff;
+}
+
+.mapping-row.unmapped {
+  background: #fffaf0;
+}
+
+.mapping-col {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapping-arrow {
+  text-align: center;
+  color: var(--text-light);
+  font-size: 11px;
+}
+
+.mapping-row.mapped .mapping-arrow { color: var(--primary); }
+.mapping-row.unmapped .mapping-arrow { color: #e17055; }
+
+.mapping-field {
+  color: var(--text-light);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mapping-row.mapped .mapping-field { color: var(--text); }
+
+.mapping-summary {
+  padding: 6px 12px;
+  font-size: 11px;
+  border-top: 1px solid var(--border);
+}
+
+.mapping-summary.success { color: var(--primary); }
+.mapping-summary.error   { color: var(--error); }
+.mapping-summary.info    { color: var(--text-light); }
+
+/* ---- */
 
 .helper-text {
   font-size: 11px;

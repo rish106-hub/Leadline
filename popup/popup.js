@@ -22,9 +22,18 @@ function initTabs() {
 function showView(viewId) {
   $$('.view').forEach(v => v.classList.remove('active'));
   $(viewId).classList.add('active');
-  
-  // If switching to history, refresh it
+
   if (viewId === 'viewHistory') renderHistory();
+
+  // Re-render saved mapping when user opens Settings
+  if (viewId === 'viewSetup' && config?.columnMapping) {
+    renderMappingPreview(
+      config.sheetHeaders || [],
+      config.columnMapping,
+      [], // unmapped not re-computed here, just show current state
+      config.hasHeaders !== false
+    );
+  }
 }
 
 // --- Toast ---
@@ -38,7 +47,7 @@ function showToast(msg, type = 'success') {
 // --- Storage & Config ---
 async function loadConfig() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['sheetId', 'sheetName'], (data) => {
+    chrome.storage.sync.get(['sheetId', 'sheetName', 'columnMapping', 'sheetHeaders', 'totalColumns', 'hasHeaders'], (data) => {
       resolve(data.sheetId ? data : null);
     });
   });
@@ -182,29 +191,21 @@ async function saveLead() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Saving...';
 
-  const name = $('inputName').value.trim();
-  const email = $('inputEmail').value.trim();
-  const company = $('inputCompany').value.trim();
-  const notes = $('inputNotes').value.trim();
-
-  // Columns: Name, Phone, Email, Company, Message, Message Time, Message Date, Timestamp, Source
-  // Service worker will sanitize to prevent formula injection
-  // Use actual captured timestamp and keep message time/date as-is (can be null/empty)
-  const phone = $('inputPhone').value.trim();
-  const row = [
-    name,
-    phone,
-    email,
-    company,
-    `${leadData.message}${notes ? ' | Note: ' + notes : ''}`,
-    leadData.messageTime || '',
-    leadData.messageDate || '',
-    leadData.capturedAt || new Date().toISOString(),
-    'WhatsApp Web'
-  ];
+  const fields = {
+    name:        $('inputName').value.trim(),
+    phone:       $('inputPhone').value.trim(),
+    email:       $('inputEmail').value.trim(),
+    company:     $('inputCompany').value.trim(),
+    notes:       $('inputNotes').value.trim(),
+    message:     leadData.message || '',
+    messageTime: leadData.messageTime || '',
+    messageDate: leadData.messageDate || '',
+    capturedAt:  leadData.capturedAt || new Date().toISOString(),
+    source:      'WhatsApp Web'
+  };
 
   chrome.runtime.sendMessage(
-    { action: 'saveRow', sheetId: config.sheetId, sheetName: config.sheetName, row },
+    { action: 'saveRow', sheetId: config.sheetId, sheetName: config.sheetName, fields },
     async (response) => {
       btn.innerHTML = originalHtml;
       
@@ -253,9 +254,23 @@ async function init() {
 
   if (!config) {
     showView('viewSetup');
-    // Hide nav if not setup
     $('viewLead').classList.remove('active');
     return;
+  }
+
+  // If sheet is connected but no column mapping cached (old config or first run
+  // after this update), silently re-read headers and cache mapping before capturing.
+  if (!config.columnMapping || Object.keys(config.columnMapping).length === 0) {
+    chrome.runtime.sendMessage(
+      { action: 'refreshMapping', sheetId: config.sheetId, sheetName: config.sheetName },
+      (response) => {
+        if (response && response.success) {
+          const { headers, mapping, totalColumns, hasHeaders } = response.data;
+          const update = { columnMapping: mapping, sheetHeaders: headers, totalColumns, hasHeaders };
+          chrome.storage.sync.set(update, () => { Object.assign(config, update); });
+        }
+      }
+    );
   }
 
   // Auto-refresh lead data
@@ -318,6 +333,86 @@ async function refreshLeadData() {
   $$('.nav-item')[0].classList.add('active');
 }
 
+// --- Column Mapping Preview ---
+const FIELD_LABELS = {
+  name: 'Name', phone: 'Phone', email: 'Email', company: 'Company',
+  message: 'Message', messageTime: 'Message Time', messageDate: 'Message Date',
+  capturedAt: 'Captured At', source: 'Source', notes: 'Notes'
+};
+
+function renderMappingPreview(headers, mapping, unmapped, hasHeaders) {
+  const section = $('mappingPreview');
+  const list = $('mappingList');
+  const summary = $('mappingSummary');
+  const confirmBtn = $('btnConfirmConnect');
+  if (!section || !list) return;
+
+  list.innerHTML = '';
+
+  if (!hasHeaders || !headers.length) {
+    summary.textContent = 'Sheet is empty — default columns will be created on first save.';
+    summary.className = 'mapping-summary info';
+    section.classList.remove('hidden');
+    if (confirmBtn) confirmBtn.classList.remove('hidden');
+    return;
+  }
+
+  // Reverse lookup: colIndex → field
+  const indexToField = {};
+  for (const [field, idx] of Object.entries(mapping)) indexToField[idx] = field;
+
+  headers.forEach((header, idx) => {
+    const field = indexToField[idx];
+    const row = document.createElement('div');
+    row.className = `mapping-row ${field ? 'mapped' : 'unmapped'}`;
+
+    const colLabel = document.createElement('span');
+    colLabel.className = 'mapping-col';
+    colLabel.textContent = header;
+
+    const arrow = document.createElement('span');
+    arrow.className = 'mapping-arrow';
+    arrow.textContent = field ? '→' : '×';
+
+    const fieldLabel = document.createElement('span');
+    fieldLabel.className = 'mapping-field';
+    fieldLabel.textContent = field ? FIELD_LABELS[field] || field : 'Not mapped (will be skipped)';
+
+    row.appendChild(colLabel);
+    row.appendChild(arrow);
+    row.appendChild(fieldLabel);
+    list.appendChild(row);
+  });
+
+  const mappedCount = Object.keys(mapping).length;
+  const unmappedCount = unmapped.length;
+  summary.textContent = `${mappedCount} column${mappedCount !== 1 ? 's' : ''} mapped · ${unmappedCount} skipped`;
+  summary.className = `mapping-summary ${mappedCount > 0 ? 'success' : 'error'}`;
+
+  section.classList.remove('hidden');
+  if (confirmBtn) confirmBtn.classList.remove('hidden');
+}
+
+function refreshMapping() {
+  if (!config) return;
+  chrome.runtime.sendMessage(
+    { action: 'refreshMapping', sheetId: config.sheetId, sheetName: config.sheetName },
+    (response) => {
+      if (chrome.runtime.lastError || !response || !response.success) {
+        showToast(response?.error || 'Failed to refresh mapping', 'error');
+        return;
+      }
+      const { headers, mapping, unmapped, totalColumns, hasHeaders } = response.data;
+      const update = { columnMapping: mapping, sheetHeaders: headers, totalColumns, hasHeaders };
+      chrome.storage.sync.set(update, () => {
+        Object.assign(config, update);
+        renderMappingPreview(headers, mapping, unmapped, hasHeaders);
+        showToast('Column mapping refreshed');
+      });
+    }
+  );
+}
+
 // --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', () => {
   $('btnSaveConfig').addEventListener('click', async () => {
@@ -349,29 +444,32 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Validate sheet access and worksheet existence
+    // Validate sheet access, read headers, build mapping
     chrome.runtime.sendMessage(
       { action: 'validateSheet', sheetId, sheetName },
       (response) => {
         btn.textContent = originalText;
+        btn.disabled = false;
 
         if (chrome.runtime.lastError || !response) {
           showToast('Connection error', 'error');
-          btn.disabled = false;
           return;
         }
 
-        if (response.success) {
-          chrome.storage.sync.set({ sheetId, sheetName }, () => {
-            config = { sheetId, sheetName };
-            updateStatus(true);
-            showToast(`Connected to "${sheetName}"!`);
-            setTimeout(init, 1000);
-          });
-        } else {
+        if (!response.success) {
           showToast(response.error || 'Failed to validate sheet', 'error');
-          btn.disabled = false;
+          return;
         }
+
+        const { mapping, unmapped, totalColumns, headers, hasHeaders } = response.data;
+
+        // Save full config including column mapping
+        const newConfig = { sheetId, sheetName, columnMapping: mapping, sheetHeaders: headers, totalColumns, hasHeaders };
+        chrome.storage.sync.set(newConfig, () => {
+          config = newConfig;
+          updateStatus(true);
+          renderMappingPreview(headers, mapping, unmapped, hasHeaders);
+        });
       }
     );
   });
@@ -380,6 +478,16 @@ document.addEventListener('DOMContentLoaded', () => {
   $('inputName').addEventListener('input', validateSaveButton);
   $('inputPhone').addEventListener('input', validateSaveButton);
   $('btnRefresh').addEventListener('click', refreshLeadData);
+
+  // Confirm mapping → proceed to capture
+  $('btnConfirmConnect').addEventListener('click', () => {
+    updateStatus(true);
+    showToast(`Connected to "${config.sheetName}"!`);
+    setTimeout(init, 600);
+  });
+
+  // Refresh column mapping from sheet
+  $('btnRefreshMapping').addEventListener('click', refreshMapping);
 
   // Copy buttons
   document.addEventListener('click', (e) => {

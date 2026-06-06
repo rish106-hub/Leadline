@@ -50,6 +50,21 @@
       <button class="btn btn-primary btn-lg" id="btnSaveConfig">
         Connect Account
       </button>
+
+      <!-- Column Mapping Preview (shown after validation) -->
+      <div id="mappingPreview" class="mapping-preview hidden">
+        <div class="mapping-header">
+          <span class="mapping-title">Column Mapping</span>
+          <button class="btn-icon" id="btnRefreshMapping" title="Re-read sheet headers">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="13" height="13"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          </button>
+        </div>
+        <div id="mappingList" class="mapping-list"></div>
+        <p id="mappingSummary" class="mapping-summary"></p>
+        <button class="btn btn-primary btn-lg hidden" id="btnConfirmConnect" style="margin-top:10px;">
+          Confirm &amp; Start Capturing
+        </button>
+      </div>
     </div>
 
     <!-- Loading View -->
