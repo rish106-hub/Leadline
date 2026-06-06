@@ -151,13 +151,16 @@ function populateLeadView(data) {
   if (phoneInput && data.phone) {
     phoneInput.value = data.phone;
     if (phoneStatus) {
-      phoneStatus.textContent = '✓ Auto-extracted from chat';
+      const label = data.phoneSource === 'auto-opened'
+        ? '✓ Auto-extracted (contact info opened automatically)'
+        : '✓ Auto-extracted from chat';
+      phoneStatus.textContent = label;
       phoneStatus.className = 'helper-text success';
     }
   } else if (phoneInput && !data.phone) {
     phoneInput.value = '';
     if (phoneStatus) {
-      phoneStatus.textContent = 'Please enter phone number manually';
+      phoneStatus.textContent = 'Phone not found — enter manually';
       phoneStatus.className = 'helper-text error';
     }
   }
@@ -281,10 +284,15 @@ async function refreshLeadData() {
     return;
   }
 
+  // Show loading state — auto-open contact info can take up to ~2s
+  $('loadingMessage').textContent = 'Opening contact details…';
+  showView('viewLoading');
+
   let response = await requestLeadData(tab.id);
 
   // Existing WhatsApp tabs may not have a listener after an extension reload.
   if (!response) {
+    $('loadingMessage').textContent = 'Injecting script…';
     try {
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -304,7 +312,7 @@ async function refreshLeadData() {
   leadData = response;
   populateLeadView(leadData);
   showView('viewLead');
-  
+
   // Update nav state
   $$('.nav-item').forEach(b => b.classList.remove('active'));
   $$('.nav-item')[0].classList.add('active');

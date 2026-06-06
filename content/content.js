@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = '1.1.0';
+  const CONTENT_SCRIPT_VERSION = '1.2.0';
   if (globalThis.__waLeadCaptureInstalledVersion === CONTENT_SCRIPT_VERSION) return;
   globalThis.__waLeadCaptureInstalledVersion = CONTENT_SCRIPT_VERSION;
 
@@ -20,7 +20,6 @@
   function isPhoneNumber(value) {
     const text = cleanText(value);
     if (!/^\+?[\d][\d\s().-]+$/.test(text)) return false;
-
     const digitCount = text.replace(/\D/g, '').length;
     return digitCount >= 8 && digitCount <= 15;
   }
@@ -170,7 +169,113 @@
     };
   }
 
-  function extractLeadData() {
+  // --- Smart Contact Info Auto-Open ---
+
+  // WhatsApp Web is a React app — plain .click() misses React's synthetic event handler.
+  // Dispatching the full native mouse event sequence (with bubbles) lets React's root
+  // event delegation pick it up.
+  function simulateClick(element) {
+    ['mousedown', 'mouseup', 'click'].forEach(type => {
+      element.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        button: 0,
+        buttons: 1
+      }));
+    });
+  }
+
+  function isContactPanelOpen() {
+    // Avoid false positives — check for specific contact-info panel content
+    if (document.querySelector('[data-testid="contact-info"]')) return true;
+    if (document.querySelector('[data-testid="rightSidebar"]')) return true;
+    // Look for a heading that says "Contact info" (language-agnostic fallback)
+    const headings = document.querySelectorAll('h1, h2, [role="heading"], span');
+    for (const el of headings) {
+      if (el.textContent.trim().toLowerCase() === 'contact info') return true;
+    }
+    return false;
+  }
+
+  function findContactInfoTrigger(header) {
+    if (!header) return null;
+
+    // Ordered by specificity — first match wins
+    const selectors = [
+      '[data-testid="conversation-info-header"]',
+      '[data-testid="conversation-header-user"]',
+      '[aria-label*="contact info" i]',
+      '[aria-label*="profile" i]',
+      '[aria-label*="open contact" i]',
+      'div[role="button"]',
+      '[role="button"]',
+    ];
+
+    for (const sel of selectors) {
+      const el = header.querySelector(sel) || document.querySelector(`#main ${sel}`);
+      if (el) {
+        console.log('[WA Lead] Contact trigger found via:', sel, el);
+        return el;
+      }
+    }
+
+    // Last resort: first child div of header (the name+avatar row)
+    const fallback = header.firstElementChild;
+    console.log('[WA Lead] Contact trigger fallback: header.firstElementChild', fallback);
+    return fallback || header;
+  }
+
+  function waitForContactPanel(timeoutMs = 2200) {
+    if (isContactPanelOpen()) return Promise.resolve(true);
+
+    return new Promise(resolve => {
+      const timer = setTimeout(() => {
+        observer.disconnect();
+        console.log('[WA Lead] Contact panel wait timed out after', timeoutMs, 'ms');
+        resolve(false);
+      }, timeoutMs);
+
+      const observer = new MutationObserver(() => {
+        if (isContactPanelOpen()) {
+          clearTimeout(timer);
+          observer.disconnect();
+          console.log('[WA Lead] Contact panel detected');
+          resolve(true);
+        }
+      });
+
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function tryAutoOpenContactInfo(header) {
+    if (isContactPanelOpen()) {
+      console.log('[WA Lead] Contact panel already open');
+      return true;
+    }
+
+    const trigger = findContactInfoTrigger(header);
+    if (!trigger) {
+      console.log('[WA Lead] No contact trigger found');
+      return false;
+    }
+
+    console.log('[WA Lead] Simulating click on:', trigger.tagName, trigger.getAttribute('data-testid') || trigger.getAttribute('role') || '');
+    simulateClick(trigger);
+
+    const opened = await waitForContactPanel(2200);
+    if (opened) await sleep(300); // Let panel content fully paint
+    return opened;
+  }
+
+  // --- Main Extraction (Smart, Async) ---
+
+  async function extractLeadDataSmart() {
     try {
       if (!document.body) {
         return { error: 'NO_CHAT', message: 'Page not ready' };
@@ -183,16 +288,29 @@
 
       const header = findHeader(mainPanel);
       const name = extractName(header);
-      const phone = extractPhone(mainPanel, header);
       const messageData = extractMessage(mainPanel);
 
-      if (!name && !phone && !messageData.message) {
-        return { error: 'EXTRACT_ERROR', message: 'WhatsApp chat data was not found' };
+      if (!name && !messageData.message) {
+        return { error: 'NO_CHAT', message: 'Open a WhatsApp conversation first' };
+      }
+
+      // First attempt — panel may already be open
+      let phone = extractPhone(mainPanel, header);
+      let phoneSource = phone ? 'extracted' : null;
+
+      // Auto-open contact info panel if phone missing
+      if (!phone) {
+        const panelOpened = await tryAutoOpenContactInfo(header);
+        if (panelOpened) {
+          phone = extractPhone(mainPanel, header);
+          phoneSource = phone ? 'auto-opened' : null;
+        }
       }
 
       return {
         name: name || 'Unknown',
         phone,
+        phoneSource,
         email: null,
         company: null,
         message: messageData.message || 'No message',
@@ -208,16 +326,17 @@
   }
 
   chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
-    try {
-      if (request.action === 'extractLead') {
-        sendResponse(extractLeadData());
-      } else {
-        sendResponse({ error: 'UNKNOWN_ACTION' });
-      }
-    } catch (err) {
-      console.error('[WA Lead] Listener error:', err);
-      sendResponse({ error: 'ERROR', message: err.message });
+    if (request.action === 'extractLead') {
+      extractLeadDataSmart()
+        .then(sendResponse)
+        .catch(err => {
+          console.error('[WA Lead] Listener error:', err);
+          sendResponse({ error: 'ERROR', message: err.message });
+        });
+      return true; // Keep message port open for async response
     }
+
+    sendResponse({ error: 'UNKNOWN_ACTION' });
     return true;
   });
 })();
