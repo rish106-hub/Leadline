@@ -1,12 +1,30 @@
 const $ = (id) => document.getElementById(id);
+const $$ = (selector) => document.querySelectorAll(selector);
 
 let leadData = null;
 let config = null;
+let history = [];
 
-// --- Views ---
+// --- Tab Management ---
+function initTabs() {
+  $$('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const viewId = btn.getAttribute('data-view');
+      showView(viewId);
+      
+      // Update active tab UI
+      $$('.nav-item').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+}
+
 function showView(viewId) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  $$('.view').forEach(v => v.classList.remove('active'));
   $(viewId).classList.add('active');
+  
+  // If switching to history, refresh it
+  if (viewId === 'viewHistory') renderHistory();
 }
 
 // --- Toast ---
@@ -17,8 +35,8 @@ function showToast(msg, type = 'success') {
   setTimeout(() => { t.classList.remove('show'); }, 3000);
 }
 
-// --- Config ---
-function loadConfig() {
+// --- Storage & Config ---
+async function loadConfig() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(['sheetId', 'sheetName'], (data) => {
       resolve(data.sheetId ? data : null);
@@ -26,204 +44,348 @@ function loadConfig() {
   });
 }
 
-function saveConfig(sheetId, sheetName) {
+async function loadHistory() {
   return new Promise((resolve) => {
-    chrome.storage.sync.set({ sheetId, sheetName }, resolve);
+    chrome.storage.local.get(['leadHistory'], (data) => {
+      history = data.leadHistory || [];
+      resolve(history);
+    });
   });
 }
 
-// --- Validation ---
-function validateSaveButton() {
-  const name = $('inputName')?.value?.trim();
-  const phone = leadData?.phone;
-  const canSave = !!(name && phone && phone.trim());
-  $('btnSave').disabled = !canSave;
-  $('btnSave').title = canSave ? '' : 'Name and Phone required';
+async function addToHistory(lead) {
+  history.unshift(lead);
+  if (history.length > 20) history.pop(); // Keep last 20
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ leadHistory: history }, resolve);
+  });
 }
 
-// Re-validate when user types name
-document.addEventListener('DOMContentLoaded', () => {
-  $('inputName')?.addEventListener('input', validateSaveButton);
-});
+// --- UI Updates ---
+function updateStatus(isConnected) {
+  const dot = $('statusDot');
+  const text = $('statusText');
+  if (isConnected) {
+    dot.classList.add('active');
+    text.textContent = 'Connected';
+  } else {
+    dot.classList.remove('active');
+    text.textContent = 'Disconnected';
+  }
+}
 
-// --- Populate lead view ---
-function populateLead(data, cfg) {
-  // Pre-fill name if found, else leave blank for manual entry
+function renderHistory() {
+  const list = $('historyList');
+  const count = $('historyCount');
+  count.textContent = history.length;
+
+  // Clear list
+  list.innerHTML = '';
+
+  if (history.length === 0) {
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-history';
+    emptyDiv.textContent = 'No leads saved yet.';
+    list.appendChild(emptyDiv);
+    return;
+  }
+
+  history.forEach(item => {
+    const itemDiv = document.createElement('div');
+    itemDiv.className = 'history-item';
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'history-item-info';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'history-item-name';
+    nameSpan.textContent = item.name || 'Unknown';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'history-item-time';
+    timeSpan.textContent = new Date(item.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(timeSpan);
+
+    const badgeDiv = document.createElement('div');
+    badgeDiv.className = 'badge';
+    badgeDiv.textContent = item.sheetName || 'Sheet';
+
+    itemDiv.appendChild(infoDiv);
+    itemDiv.appendChild(badgeDiv);
+    list.appendChild(itemDiv);
+  });
+}
+
+// --- Lead Extraction & Population ---
+function populateLeadView(data) {
+  $('displayPhone').textContent = data.phone || 'Unknown';
+  $('displayMessage').textContent = data.message || 'No message';
+
+  const messageTimeEl = $('displayMessageTime');
+  const messageTimeText = data.messageTime || '(Unknown)';
+  if (messageTimeEl) {
+    messageTimeEl.textContent = messageTimeText;
+    if (!data.messageTime) messageTimeEl.classList.add('empty');
+  }
+
+  const messageDateEl = $('displayMessageDate');
+  const messageDateText = data.messageDate || '(Unknown)';
+  if (messageDateEl) {
+    messageDateEl.textContent = messageDateText;
+    if (!data.messageDate) messageDateEl.classList.add('empty');
+  }
+
+  // Pre-fill name if found
   const nameInput = $('inputName');
-  nameInput.value = (data.name && data.name !== 'Unknown') ? data.name : '';
-
-  const phoneEl = $('displayPhone');
-  if (data.phone) {
-    phoneEl.textContent = data.phone;
-    phoneEl.classList.remove('empty');
+  if (data.name && data.name !== 'Unknown') {
+    nameInput.value = data.name;
   } else {
-    phoneEl.textContent = 'Not found — open contact info panel';
-    phoneEl.classList.add('empty');
+    nameInput.value = '';
   }
 
-  const msgEl = $('displayMessage');
-  if (data.message) {
-    msgEl.textContent = data.message;
-    msgEl.classList.remove('empty');
-  } else {
-    msgEl.textContent = 'No message';
-    msgEl.classList.add('empty');
+  // Pre-fill phone if found, mark status
+  const phoneInput = $('inputPhone');
+  const phoneStatus = $('phoneStatus');
+  if (phoneInput && data.phone) {
+    phoneInput.value = data.phone;
+    if (phoneStatus) {
+      phoneStatus.textContent = '✓ Auto-extracted from chat';
+      phoneStatus.className = 'helper-text success';
+    }
+  } else if (phoneInput && !data.phone) {
+    phoneInput.value = '';
+    if (phoneStatus) {
+      phoneStatus.textContent = 'Please enter phone number manually';
+      phoneStatus.className = 'helper-text error';
+    }
   }
 
-  const timeEl = $('displayMessageTime');
-  if (data.messageTime) {
-    timeEl.textContent = data.messageTime;
-    timeEl.classList.remove('empty');
-  } else {
-    timeEl.textContent = '—';
-    timeEl.classList.add('empty');
-  }
-
-  const dateEl = $('displayMessageDate');
-  if (data.messageDate) {
-    dateEl.textContent = data.messageDate;
-    dateEl.classList.remove('empty');
-  } else {
-    dateEl.textContent = '—';
-    dateEl.classList.add('empty');
-  }
-
-  $('sheetTarget').textContent = `→ ${cfg.sheetName}`;
-  $('sheetBadge').textContent = cfg.sheetName;
+  validateSaveButton();
 }
 
-// --- Save row ---
-async function saveRow() {
+function validateSaveButton() {
+  const name = $('inputName').value.trim();
+  const phone = $('inputPhone')?.value?.trim() || '';
+  const canSave = !!(name && phone);
+  $('btnSave').disabled = !canSave;
+}
+
+// --- Save Action ---
+async function saveLead() {
   const btn = $('btnSave');
+  const originalHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Saving…';
+  btn.innerHTML = '<div class="spinner"></div> Saving...';
 
-  const now = new Date();
-  const capturedDate = now.toISOString().split('T')[0];
-  const capturedTime = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const name = $('inputName').value.trim();
+  const email = $('inputEmail').value.trim();
+  const company = $('inputCompany').value.trim();
+  const notes = $('inputNotes').value.trim();
 
-  // Prefix phone with ' to prevent Google Sheets treating +91... as formula
-  const phone = leadData.phone ? `'${leadData.phone}` : '';
-
+  // Columns: Name, Phone, Email, Company, Message, Message Time, Message Date, Timestamp, Source
+  // Service worker will sanitize to prevent formula injection
+  // Use actual captured timestamp and keep message time/date as-is (can be null/empty)
+  const phone = $('inputPhone').value.trim();
   const row = [
-    capturedDate,
-    $('inputName').value.trim() || leadData.name || '',
+    name,
     phone,
-    leadData.message || ''
+    email,
+    company,
+    `${leadData.message}${notes ? ' | Note: ' + notes : ''}`,
+    leadData.messageTime || '',
+    leadData.messageDate || '',
+    leadData.capturedAt || new Date().toISOString(),
+    'WhatsApp Web'
   ];
 
   chrome.runtime.sendMessage(
     { action: 'saveRow', sheetId: config.sheetId, sheetName: config.sheetName, row },
-    (response) => {
-      btn.innerHTML = 'Save to Sheet';
-      validateSaveButton();
-
+    async (response) => {
+      btn.innerHTML = originalHtml;
+      
       if (chrome.runtime.lastError || !response) {
-        showToast('Extension error — try again', 'error');
+        showToast('Connection error', 'error');
+        btn.disabled = false;
         return;
       }
+
       if (response.success) {
-        showToast(`Lead saved to ${config.sheetName}`, 'success');
-        // Clear editable fields
+        showToast('Lead saved successfully!');
+        
+        // Add to local history
+        await addToHistory({
+          name,
+          timestamp: leadData.capturedAt || new Date().toISOString(),
+          sheetName: config.sheetName
+        });
+        
+        // Clear inputs
+        $('inputName').value = '';
+        $('inputPhone').value = '';
         $('inputEmail').value = '';
         $('inputCompany').value = '';
+        $('inputNotes').value = '';
+
+        const phoneStatus = $('phoneStatus');
+        if (phoneStatus) phoneStatus.textContent = '';
+
+        validateSaveButton();
       } else {
-        showToast(response.error || 'Save failed', 'error');
+        showToast(response.error || 'Failed to save', 'error');
+        btn.disabled = false;
       }
     }
   );
 }
 
-// --- Init ---
+// --- Initialization ---
 async function init() {
   config = await loadConfig();
+  await loadHistory();
+  initTabs();
+  
+  updateStatus(!!config);
 
   if (!config) {
     showView('viewSetup');
+    // Hide nav if not setup
+    $('viewLead').classList.remove('active');
     return;
   }
 
-  $('sheetBadge').textContent = config.sheetName;
+  // Auto-refresh lead data
+  refreshLeadData();
+}
 
-  // Query active WhatsApp tab for lead data
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    console.log('Tab:', tab?.url);
-    if (!tab || !tab.url?.includes('web.whatsapp.com')) {
-      console.log('Not on WhatsApp');
-      showView('viewNoChat');
-      return;
-    }
+function queryActiveTab() {
+  return new Promise(resolve => {
+    chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs[0]));
+  });
+}
 
-    console.log('Sending message to content script...');
-    chrome.tabs.sendMessage(tab.id, { action: 'extractLead' }, (response) => {
-      console.log('Response from content script:', response);
-      console.log('Runtime error:', chrome.runtime.lastError);
-
-      if (chrome.runtime.lastError || !response) {
-        console.log('No response or error');
-        showView('viewNoChat');
-        return;
-      }
-
-      if (response.error === 'NO_CHAT') {
-        console.log('No chat open');
-        showView('viewNoChat');
-        return;
-      }
-
-      console.log('Lead data:', response);
-      leadData = response;
-      populateLead(leadData, config);
-      validateSaveButton();
-      showView('viewLead');
+function requestLeadData(tabId) {
+  return new Promise(resolve => {
+    chrome.tabs.sendMessage(tabId, { action: 'extractLead' }, response => {
+      const error = chrome.runtime.lastError;
+      resolve(error ? null : response);
     });
   });
 }
 
-// --- Event listeners ---
-$('btnSaveConfig').addEventListener('click', async () => {
-  let sheetInput = $('inputSheetId').value.trim();
-  const sheetName = $('inputSheetName').value.trim() || 'Sheet1';
-
-  if (!sheetInput) {
-    showToast('Paste a Sheet link or ID', 'error');
+async function refreshLeadData() {
+  const tab = await queryActiveTab();
+  if (!tab || !tab.url?.includes('web.whatsapp.com')) {
+    showView('viewNoChat');
     return;
   }
 
-  // Extract ID from full URL if pasted
-  let sheetId = sheetInput;
-  if (sheetInput.includes('docs.google.com')) {
-    const match = sheetInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    if (match) {
-      sheetId = match[1];
-    } else {
-      showToast('Invalid Sheet link', 'error');
-      return;
+  let response = await requestLeadData(tab.id);
+
+  // Existing WhatsApp tabs may not have a listener after an extension reload.
+  if (!response) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content/content.js']
+      });
+      response = await requestLeadData(tab.id);
+    } catch (error) {
+      console.error('[WA Lead] Could not inject content script:', error);
     }
   }
 
-  await saveConfig(sheetId, sheetName);
-  config = { sheetId, sheetName };
-  $('sheetBadge').textContent = sheetName;
-  showToast('Sheet connected!', 'success');
+  if (!response || response.error) {
+    showView('viewNoChat');
+    return;
+  }
 
-  // Re-init to load lead view
-  setTimeout(init, 500);
-});
+  leadData = response;
+  populateLeadView(leadData);
+  showView('viewLead');
+  
+  // Update nav state
+  $$('.nav-item').forEach(b => b.classList.remove('active'));
+  $$('.nav-item')[0].classList.add('active');
+}
 
-$('btnSave').addEventListener('click', saveRow);
+// --- Event Listeners ---
+document.addEventListener('DOMContentLoaded', () => {
+  $('btnSaveConfig').addEventListener('click', async () => {
+    const btn = $('btnSaveConfig');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<div class="spinner"></div> Validating...';
 
-$('btnSettings').addEventListener('click', () => {
-  $('inputSheetId').value = config?.sheetId || '';
-  $('inputSheetName').value = config?.sheetName || 'Sheet1';
-  showView('viewSetup');
-});
+    let sheetInput = $('inputSheetId').value.trim();
+    const sheetName = $('inputSheetName').value.trim() || 'Sheet1';
 
-$('btnSettingsFromNoChat').addEventListener('click', () => {
-  $('inputSheetId').value = config?.sheetId || '';
-  $('inputSheetName').value = config?.sheetName || 'Sheet1';
-  showView('viewSetup');
+    if (!sheetInput) {
+      showToast('Please enter a Sheet link or ID', 'error');
+      btn.textContent = originalText;
+      btn.disabled = false;
+      return;
+    }
+
+    let sheetId = sheetInput;
+    if (sheetInput.includes('docs.google.com')) {
+      const match = sheetInput.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (match) {
+        sheetId = match[1];
+      } else {
+        showToast('Invalid Sheet URL', 'error');
+        btn.textContent = originalText;
+        btn.disabled = false;
+        return;
+      }
+    }
+
+    // Validate sheet access and worksheet existence
+    chrome.runtime.sendMessage(
+      { action: 'validateSheet', sheetId, sheetName },
+      (response) => {
+        btn.textContent = originalText;
+
+        if (chrome.runtime.lastError || !response) {
+          showToast('Connection error', 'error');
+          btn.disabled = false;
+          return;
+        }
+
+        if (response.success) {
+          chrome.storage.sync.set({ sheetId, sheetName }, () => {
+            config = { sheetId, sheetName };
+            updateStatus(true);
+            showToast(`Connected to "${sheetName}"!`);
+            setTimeout(init, 1000);
+          });
+        } else {
+          showToast(response.error || 'Failed to validate sheet', 'error');
+          btn.disabled = false;
+        }
+      }
+    );
+  });
+
+  $('btnSave').addEventListener('click', saveLead);
+  $('inputName').addEventListener('input', validateSaveButton);
+  $('inputPhone').addEventListener('input', validateSaveButton);
+  $('btnRefresh').addEventListener('click', refreshLeadData);
+
+  // Copy buttons
+  document.addEventListener('click', (e) => {
+    const copyBtn = e.target.closest('.btn-copy');
+    if (copyBtn) {
+      const targetId = copyBtn.getAttribute('data-copy');
+      const text = $(targetId).textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        const originalSvg = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+        setTimeout(() => { copyBtn.innerHTML = originalSvg; }, 2000);
+      });
+    }
+  });
 });
 
 init();

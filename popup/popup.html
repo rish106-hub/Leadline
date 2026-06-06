@@ -8,88 +8,150 @@
 </head>
 <body>
 
-<div class="header">
-  <h1>Lead Capture</h1>
-  <span class="sheet-badge" id="sheetBadge"></span>
+<div class="app-container">
+  <!-- Top Navbar -->
+  <header class="navbar">
+    <div class="logo-area">
+      <div class="icon-circle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+      </div>
+      <span class="app-title">LeadCapture</span>
+    </div>
+    <div class="status-indicator">
+      <span id="statusDot" class="dot"></span>
+      <span id="statusText">Disconnected</span>
+    </div>
+  </header>
+
+  <main class="content">
+    <!-- Setup View -->
+    <div id="viewSetup" class="view">
+      <div class="setup-header">
+        <h2>Connect Google Sheet</h2>
+        <p>Your leads will be saved here in real-time.</p>
+      </div>
+      
+      <div class="form-group">
+        <label for="inputSheetId">Sheet Link or ID</label>
+        <div class="input-wrapper">
+          <input type="text" id="inputSheetId" placeholder="https://docs.google.com/spreadsheets/d/...">
+        </div>
+        <p class="helper-text">Paste the full URL from your browser address bar.</p>
+      </div>
+
+      <div class="form-group">
+        <label for="inputSheetName">Tab Name</label>
+        <div class="input-wrapper">
+          <input type="text" id="inputSheetName" value="Sheet1">
+        </div>
+        <p class="helper-text">The name of the worksheet tab (e.g., "Sheet1").</p>
+      </div>
+
+      <button class="btn btn-primary btn-lg" id="btnSaveConfig">
+        Connect Account
+      </button>
+    </div>
+
+    <!-- No Chat View -->
+    <div id="viewNoChat" class="view">
+      <div class="empty-state">
+        <div class="empty-icon">📱</div>
+        <h3>No active chat found</h3>
+        <p>Open a conversation on WhatsApp Web and try again.</p>
+        <button class="btn btn-outline" id="btnRefresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-right:6px;"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+          Check again
+        </button>
+      </div>
+    </div>
+
+    <!-- Capture View -->
+    <div id="viewLead" class="view">
+      <div class="lead-card">
+        <div class="lead-info">
+          <div class="info-row">
+            <span class="label">Phone</span>
+            <div class="value-group">
+              <span id="displayPhone" class="value"></span>
+              <button class="btn-copy" data-copy="displayPhone" title="Copy phone">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+              </button>
+            </div>
+          </div>
+          <div class="info-row">
+            <span class="label">Last Message</span>
+            <span id="displayMessage" class="value truncate"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="capture-form">
+        <div class="form-group">
+          <label for="inputName">Full Name <span class="required">*</span></label>
+          <input type="text" id="inputName" placeholder="e.g. John Doe" required>
+        </div>
+
+        <div class="form-group">
+          <label for="inputPhone">Phone <span class="required">*</span></label>
+          <input type="tel" id="inputPhone" placeholder="e.g. +1 (555) 123-4567" required>
+          <p class="helper-text" id="phoneStatus"></p>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="inputEmail">Email</label>
+            <input type="email" id="inputEmail" placeholder="john@company.com">
+          </div>
+          <div class="form-group">
+            <label for="inputCompany">Company</label>
+            <input type="text" id="inputCompany" placeholder="Acme Inc.">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="inputNotes">Notes</label>
+          <textarea id="inputNotes" rows="2" placeholder="Add any additional context..."></textarea>
+        </div>
+      </div>
+
+      <button class="btn btn-primary btn-lg" id="btnSave" disabled>
+        Save Lead to Sheet
+      </button>
+    </div>
+
+    <!-- History View -->
+    <div id="viewHistory" class="view">
+      <div class="view-header">
+        <h2>Recent Leads</h2>
+        <span id="historyCount" class="badge">0</span>
+      </div>
+      <div id="historyList" class="history-list">
+        <!-- History items injected here -->
+        <div class="empty-history">
+          No leads saved yet.
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-view="viewLead">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+      <span>Capture</span>
+    </button>
+    <button class="nav-item" data-view="viewHistory">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      <span>History</span>
+    </button>
+    <button class="nav-item" data-view="viewSetup">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
+  <div class="toast" id="toast"></div>
 </div>
-
-<!-- Setup View (first run) -->
-<div id="viewSetup" class="view">
-  <p class="setup-info">
-    Connect your Google Sheet to start capturing leads.
-  </p>
-
-  <div class="field-group">
-    <label>Google Sheet Link or ID</label>
-    <input type="text" id="inputSheetId" placeholder="https://docs.google.com/spreadsheets/d/...">
-    <div class="hint">Paste full link or Sheet ID (extracted automatically)</div>
-  </div>
-
-  <div class="field-group">
-    <label>Worksheet Name</label>
-    <input type="text" id="inputSheetName" value="Sheet1" placeholder="Sheet1">
-    <div class="hint">The tab name at the bottom of your sheet</div>
-  </div>
-
-  <button class="btn btn-primary" id="btnSaveConfig">Connect Sheet</button>
-</div>
-
-<!-- No chat open -->
-<div id="viewNoChat" class="view">
-  <div class="error-msg">
-    Open a WhatsApp conversation first, then click the extension icon.
-  </div>
-  <button class="btn btn-secondary" id="btnSettingsFromNoChat">Change Sheet Settings</button>
-</div>
-
-<!-- Lead capture view -->
-<div id="viewLead" class="view">
-  <div class="lead-header">
-    <div class="sheet-target" id="sheetTarget"></div>
-  </div>
-
-  <div class="field-row">
-    <label>Name <span style="font-weight:400;text-transform:none;color:#aaa">(required)</span></label>
-    <input type="text" id="inputName" placeholder="Enter contact name">
-  </div>
-
-  <div class="field-row">
-    <label>Phone</label>
-    <div class="value" id="displayPhone"></div>
-  </div>
-
-  <div class="field-row">
-    <label>Email <span style="font-weight:400;text-transform:none;color:#aaa">(optional)</span></label>
-    <input type="email" id="inputEmail" placeholder="email@example.com">
-  </div>
-
-  <div class="field-row">
-    <label>Company <span style="font-weight:400;text-transform:none;color:#aaa">(optional)</span></label>
-    <input type="text" id="inputCompany" placeholder="Company name">
-  </div>
-
-  <div class="field-row">
-    <label>Message</label>
-    <div class="value" id="displayMessage"></div>
-  </div>
-
-  <div class="field-row">
-    <label>Message Time</label>
-    <div class="value" id="displayMessageTime"></div>
-  </div>
-
-  <div class="field-row">
-    <label>Message Date</label>
-    <div class="value" id="displayMessageDate"></div>
-  </div>
-
-  <hr class="divider">
-
-  <button class="btn btn-primary" id="btnSave" disabled>Save to Sheet</button>
-  <button class="btn btn-secondary" id="btnSettings">Change Sheet Settings</button>
-</div>
-
-<div class="toast" id="toast"></div>
 
 <script src="popup.js"></script>
 </body>

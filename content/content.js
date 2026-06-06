@@ -1,148 +1,223 @@
+(() => {
+  const CONTENT_SCRIPT_VERSION = '1.1.0';
+  if (globalThis.__waLeadCaptureInstalledVersion === CONTENT_SCRIPT_VERSION) return;
+  globalThis.__waLeadCaptureInstalledVersion = CONTENT_SCRIPT_VERSION;
 
-function extractLeadData() {
-  try {
-    if (!document.body) {
-      return { error: 'NO_CHAT', message: 'Page not ready' };
-    }
+  const GENERIC_HEADER_TEXT = new Set([
+    'click here for contact info',
+    'contact info',
+    'online',
+    'offline',
+    'search',
+    'typing…',
+    'typing...'
+  ]);
 
-    // The main chat panel — scope all queries here to avoid picking up sidebar contacts
-    const mainPanel = document.querySelector('#main') ||
-                      document.querySelector('[data-testid="conversation"]') ||
-                      document.querySelector('div[role="main"]');
+  function cleanText(value) {
+    return value?.replace(/\s+/g, ' ').trim() || '';
+  }
 
-    if (!mainPanel) {
-      return { error: 'NO_CHAT', message: 'Open a WhatsApp conversation first' };
-    }
+  function isPhoneNumber(value) {
+    const text = cleanText(value);
+    if (!/^\+?[\d][\d\s().-]+$/.test(text)) return false;
 
-    // Name: from chat header title attribute (always the contact/group name)
-    let name = null;
+    const digitCount = text.replace(/\D/g, '').length;
+    return digitCount >= 8 && digitCount <= 15;
+  }
 
-    // Primary: header span[title] inside #main — most reliable
-    const headerTitleSpans = mainPanel.querySelectorAll('header span[title]');
-    for (let span of headerTitleSpans) {
-      const title = span.getAttribute('title');
-      if (title && title.length > 0 && title.length < 100) {
-        name = title;
-        break;
+  function findPhoneInText(value) {
+    const matches = cleanText(value).match(/\+?[\d][\d\s().-]{6,}\d/g) || [];
+    return matches.map(cleanText).find(isPhoneNumber) || null;
+  }
+
+  function findMainPanel() {
+    return document.querySelector('#main') ||
+      document.querySelector('[data-testid="conversation"]') ||
+      document.querySelector('div[role="main"]');
+  }
+
+  function findHeader(mainPanel) {
+    return mainPanel.querySelector('header') ||
+      document.querySelector('#main header');
+  }
+
+  function extractName(header) {
+    if (!header) return null;
+
+    const candidates = [
+      ...header.querySelectorAll('span[title], [dir="auto"][title], [dir="auto"]')
+    ];
+
+    for (const element of candidates) {
+      const text = cleanText(element.getAttribute('title') || element.textContent);
+      const normalized = text.toLowerCase();
+
+      if (
+        text &&
+        text.length < 100 &&
+        !GENERIC_HEADER_TEXT.has(normalized) &&
+        !isPhoneNumber(text) &&
+        !/^\d{1,2}:\d{2}(\s*[ap]m)?$/i.test(text)
+      ) {
+        return text;
       }
     }
 
-    // Fallback: any span[title] in header that isn't a generic label
-    if (!name) {
-      const header = mainPanel.querySelector('header');
-      if (header) {
-        const spans = header.querySelectorAll('span');
-        for (let span of spans) {
-          const text = span.textContent?.trim();
-          if (text && text.length > 0 && text.length < 100 &&
-              text !== 'Contact info' && !/^\d{2}:\d{2}$/.test(text)) {
-            name = text;
-            break;
-          }
-        }
+    return null;
+  }
+
+  function extractPhone(mainPanel, header) {
+    const phoneSelectors = [
+      '[data-testid="contact-info-subtitle"]',
+      '[aria-label*="phone" i]',
+      'a[href^="tel:"]',
+      'span[title^="+"]',
+      '[dir="auto"]'
+    ];
+
+    const contactInfoLabel = [...document.querySelectorAll('h1, h2, h3, [role="heading"], span, div')]
+      .find(element => cleanText(element.textContent).toLowerCase() === 'contact info');
+    let contactPanel = contactInfoLabel;
+
+    while (contactPanel && contactPanel !== document.body) {
+      if (findPhoneInText(contactPanel.textContent)) break;
+      contactPanel = contactPanel.parentElement;
+    }
+    if (contactPanel === document.body) contactPanel = null;
+
+    const searchAreas = [contactPanel, header].filter(Boolean);
+    const candidates = [];
+    const seen = new Set();
+
+    for (const area of searchAreas) {
+      for (const element of area.querySelectorAll(phoneSelectors.join(','))) {
+        if (seen.has(element)) continue;
+        seen.add(element);
+
+        const text = findPhoneInText(
+          element.getAttribute('href')?.replace(/^tel:/, '') ||
+          element.getAttribute('title') ||
+          element.textContent
+        );
+
+        if (!text) continue;
+
+        let score = 0;
+        if (contactPanel?.contains(element)) score += 5;
+        if (header?.contains(element)) score += 2;
+        if (text.startsWith('+')) score += 2;
+        if (element.children.length === 0) score += 1;
+
+        candidates.push({ text, score });
       }
     }
 
-    // Phone: check contact info panel first (right panel when open), then header
-    let phone = null;
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0]?.text || null;
+  }
 
-    // Right panel: contact info drawer
-    const contactPanel = document.querySelector('[data-testid="contact-info"]') ||
-                         document.querySelector('[data-testid="drawer-right"]') ||
-                         document.querySelector('div[style*="right"] [data-testid="contact-info-subtitle"]')?.closest('section') ||
-                         document.querySelector('section[tabindex="-1"]');
+  function findMessageContainers(mainPanel) {
+    const selectors = [
+      '[data-testid="msg-container"]',
+      '.message-in',
+      '.message-out',
+      '[data-pre-plain-text]'
+    ];
 
-    const phoneSearchAreas = [];
-    if (contactPanel) phoneSearchAreas.push(contactPanel);
-    const header = mainPanel.querySelector('header');
-    if (header) phoneSearchAreas.push(header);
+    const containers = [];
+    const seen = new Set();
 
-    for (const area of phoneSearchAreas) {
-      const spans = area.querySelectorAll('span');
-      for (let span of spans) {
-        const text = span.textContent?.trim() || '';
-        // Match phone: starts with + or digit, contains mostly digits/spaces/dashes
-        if (/^\+?[\d][\d\s\-()]{8,}$/.test(text) && text.length < 25) {
-          phone = text;
-          break;
-        }
-      }
-      if (phone) break;
-    }
-
-    // Fallback: search entire document for phone in contact info elements
-    if (!phone) {
-      const allPhoneEl = document.querySelectorAll('[data-testid="contact-info-subtitle"], [aria-label*="phone"], [aria-label*="Phone"]');
-      for (let el of allPhoneEl) {
-        const text = el.textContent?.trim() || '';
-        if (text.length > 5) { phone = text; break; }
+    for (const element of mainPanel.querySelectorAll(selectors.join(','))) {
+      const container = element.closest('[data-testid="msg-container"], .message-in, .message-out') || element;
+      if (!seen.has(container)) {
+        seen.add(container);
+        containers.push(container);
       }
     }
 
-    // Message: get text node only, exclude the timestamp element
-    let message = null;
-    let messageTime = null;
-    const msgContainers = mainPanel.querySelectorAll('[data-testid="msg-container"]');
+    return containers;
+  }
 
-    if (msgContainers.length > 0) {
-      const lastMsg = msgContainers[msgContainers.length - 1];
+  function extractMessage(mainPanel) {
+    const containers = findMessageContainers(mainPanel);
+    const lastMessage = containers[containers.length - 1];
+    if (!lastMessage) return { message: null, messageTime: null };
 
-      // Timestamp is in [data-testid="msg-meta"] — get it separately
-      const metaEl = lastMsg.querySelector('[data-testid="msg-meta"]');
-      if (metaEl) {
-        // Time is usually the first text in meta
-        const timeMatch = metaEl.textContent?.match(/\d{1,2}:\d{2}/);
-        if (timeMatch) messageTime = timeMatch[0];
-      }
+    const metadataElement = lastMessage.querySelector('[data-pre-plain-text]') ||
+      lastMessage.querySelector('[data-testid="msg-meta"]');
+    const metadata = cleanText(
+      metadataElement?.getAttribute('data-pre-plain-text') ||
+      metadataElement?.textContent
+    );
+    const timeMatch = metadata.match(/\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b/i) ||
+      cleanText(lastMessage.textContent).match(/\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b/i);
 
-      // Message text is in selectable-text span, NOT the whole container
-      const textEl = lastMsg.querySelector('[data-testid="msg-text"]') ||
-                     lastMsg.querySelector('span.selectable-text') ||
-                     lastMsg.querySelector('.copyable-text span');
+    const textElement = lastMessage.querySelector(
+      '[data-testid="msg-text"], .selectable-text, .copyable-text [dir="ltr"], .copyable-text [dir="auto"]'
+    );
 
-      if (textEl) {
-        message = textEl.textContent?.trim().substring(0, 100) || null;
-      } else {
-        // Fallback: strip timestamps from full text
-        let raw = lastMsg.textContent?.trim() || '';
-        raw = raw.replace(/\d{1,2}:\d{2}(\s*[AP]M)?/g, '').trim();
-        message = raw.substring(0, 100) || null;
-      }
+    let message = cleanText(textElement?.textContent);
+    if (!message) {
+      message = cleanText(lastMessage.textContent)
+        .replace(/\b\d{1,2}:\d{2}(?:\s*[ap]m)?\b/gi, '')
+        .replace(/Edited$/i, '')
+        .trim();
     }
 
-    if (!name && !message) {
-      return { error: 'NO_CHAT', message: 'Open a WhatsApp conversation first' };
-    }
-
-    const now = new Date();
     return {
-      name: name || 'Unknown',
-      phone: phone,
-      email: null,
-      company: null,
-      message: message || 'No message',
-      messageTime: messageTime || now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-      messageDate: now.toISOString().split('T')[0],
-      timestamp: now.toISOString(),
-      source: 'WhatsApp Web'
+      message: message ? message.substring(0, 500) : null,
+      messageTime: timeMatch?.[0] || null
     };
-  } catch (err) {
-    console.error('[WA Lead] Extract error:', err);
-    return { error: 'EXTRACT_ERROR', message: err.message };
   }
-}
 
-chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
-  try {
-    if (request.action === 'extractLead') {
-      const data = extractLeadData();
-      sendResponse(data);
-    } else {
-      sendResponse({ error: 'UNKNOWN_ACTION' });
+  function extractLeadData() {
+    try {
+      if (!document.body) {
+        return { error: 'NO_CHAT', message: 'Page not ready' };
+      }
+
+      const mainPanel = findMainPanel();
+      if (!mainPanel) {
+        return { error: 'NO_CHAT', message: 'Open a WhatsApp conversation first' };
+      }
+
+      const header = findHeader(mainPanel);
+      const name = extractName(header);
+      const phone = extractPhone(mainPanel, header);
+      const messageData = extractMessage(mainPanel);
+
+      if (!name && !phone && !messageData.message) {
+        return { error: 'EXTRACT_ERROR', message: 'WhatsApp chat data was not found' };
+      }
+
+      return {
+        name: name || 'Unknown',
+        phone,
+        email: null,
+        company: null,
+        message: messageData.message || 'No message',
+        messageTime: messageData.messageTime,
+        messageDate: null,
+        capturedAt: new Date().toISOString(),
+        source: 'WhatsApp Web'
+      };
+    } catch (err) {
+      console.error('[WA Lead] Extract error:', err);
+      return { error: 'EXTRACT_ERROR', message: err.message };
     }
-  } catch (err) {
-    console.error('[WA Lead] Listener error:', err);
-    sendResponse({ error: 'ERROR', message: err.message });
   }
-  return true;
-});
+
+  chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+    try {
+      if (request.action === 'extractLead') {
+        sendResponse(extractLeadData());
+      } else {
+        sendResponse({ error: 'UNKNOWN_ACTION' });
+      }
+    } catch (err) {
+      console.error('[WA Lead] Listener error:', err);
+      sendResponse({ error: 'ERROR', message: err.message });
+    }
+    return true;
+  });
+})();
